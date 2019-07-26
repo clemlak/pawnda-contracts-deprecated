@@ -47,120 +47,123 @@ contract Pawnda is Ownable {
 
     /**
      * @dev Pawns a new collateral
-     * @param customer The address of the customer
-     * @param customerNonce The nonce of the customer
-     * @param broker The address of the broker
-     * @param brokerNonce The nonce of the broker
-     * @param collateralAddress The address of the collateral
-     * @param collateralId The id of the collateral
-     * @param currencyAddress The address of the currency
-     * @param amount The amount requested by the customer
-     * @param rate The rate of the loan (expressed in per ten thousand!)
-     * @param loanDeadline The deadline of the loan
-     * @param customerSig The signature of the customer
-     * @param brokerSig The signature of the broker
+     * param customer The address of the customer
+     * param customerNonce The nonce of the customer
+     * param broker The address of the broker
+     * param brokerNonce The nonce of the broker
+     * param collateralAddress The address of the collateral
+     * param collateralId The id of the collateral
+     * param currencyAddress The address of the currency
+     * param amount The amount requested by the customer
+     * param rate The rate of the loan (expressed in per ten thousand!)
+     * param loanDeadline The deadline of the loan
+     * param customerSig The signature of the customer
+     * param brokerSig The signature of the broker
+     */
+     /*
+     address customer,
+     address broker,
+     address collateralAddress,
+     address currencyAddress,
+
+     uint256 customerNonce,
+     uint256 brokerNonce,
+     uint256 collateralId,
+     uint256 amount,
+     uint16 rate,
+     uint32 loanDeadline,
      */
     function pawnCollateral(
-        address customer,
-        uint256 customerNonce,
-        address broker,
-        uint256 brokerNonce,
-        address collateralAddress,
-        uint256 collateralId,
-        address currencyAddress,
-        uint256 amount,
-        uint16 rate,
-        uint32 loanDeadline,
+        address[4] calldata addresses,
+        uint256[6] calldata data,
         bytes calldata customerSig,
         bytes calldata brokerSig
     ) external {
         require(
-            customer == getSigner(
+            addresses[0] == getSigner(
                 customerSig,
-                customer,
-                customerNonce,
-                broker,
-                brokerNonce,
-                collateralAddress,
-                collateralId,
-                currencyAddress,
-                amount,
-                rate,
-                loanDeadline
+                addresses[0],
+                data[0],
+                addresses[1],
+                data[1],
+                addresses[2],
+                data[2],
+                addresses[3],
+                data[3],
+                uint16(data[4]),
+                uint32(data[5])
             ),
             "Customer is not the signer"
         );
 
         require(
-            broker == getSigner(
+            addresses[1] == getSigner(
                 brokerSig,
-                customer,
-                customerNonce,
-                broker,
-                brokerNonce,
-                collateralAddress,
-                collateralId,
-                currencyAddress,
-                amount,
-                rate,
-                loanDeadline
+                addresses[0],
+                data[0],
+                addresses[1],
+                data[1],
+                addresses[2],
+                data[2],
+                addresses[3],
+                data[3],
+                uint16(data[4]),
+                uint32(data[5])
             ),
             "Broker is not the signer"
         );
 
-        ERC20 currency = ERC20(currencyAddress);
-        ERC721 collateral = ERC721(collateralAddress);
+        ERC20 currency = ERC20(addresses[3]);
+        ERC721 collateral = ERC721(addresses[2]);
 
         require(
-            currency.allowance(broker, address(this)) >= amount,
+            currency.allowance(addresses[1], address(this)) >= data[3],
             "Contract is not allowed to manipulate broker funds"
         );
 
         require(
-            collateral.getApproved(collateralId) == address(this),
+            collateral.getApproved(data[2]) == address(this),
             "Contract is not allowed to manipulate customer collateral"
         );
 
         // Stores the collateral in the contract
-        require(
-            collateral.transferFrom(customer, address(this), collateralId),
-            "Collateral transfer failed"
-        );
+        collateral.transferFrom(addresses[0], address(this), data[2]);
 
         // Calculates the fee that needs to be charged
         uint256 fees = SafeMath.div(
             SafeMath.mul(
-                amount,
+                data[3],
                 fee
             ),
             10000
         );
 
         require(
-            currency.transferFrom(broker, customer, SafeMath.sub(amount, fees)),
+            currency.transferFrom(addresses[1], addresses[0], SafeMath.sub(data[3], fees)),
             "Funds transfer to the customer failed"
         );
 
         require(
-            currency.transferFrom(broker, address(this), fees),
+            currency.transferFrom(addresses[1], address(this), fees),
             "Fees transfer failed"
         );
 
         uint256 pawnId = pawns.push(
             Pawn({
-                customer: customer,
-                broker: broker,
-                collateralAddress: collateralAddress,
-                collateralId: collateralId,
-                currencyAddress: currencyAddress,
-                amount: amount,
-                rate: rate,
-                loanDeadline: loanDeadline,
+                customer: addresses[0],
+                broker: addresses[1],
+                collateralAddress: addresses[2],
+                collateralId: data[2],
+                currencyAddress: addresses[3],
+                amount: data[3],
+                rate: uint16(data[4]),
+                loanDeadline: uint32(data[5]),
+                reimbursedAmount: 0,
                 isOpen: true
             })
         ) - 1;
 
-        emit PawnCreated(pawnId, customer, broker);
+        emit PawnCreated(pawnId, addresses[0], addresses[1]);
     }
 
     /**
@@ -239,10 +242,7 @@ contract Pawnda is Ownable {
             "Collateral has already been transferred"
         );
 
-        require(
-            collateral.transferFrom(address(this), customer, pawns[pawnId].collateralId),
-            "Collateral transfer failed"
-        );
+        collateral.transferFrom(address(this), pawns[pawnId].customer, pawns[pawnId].collateralId);
     }
 
     /**
@@ -271,7 +271,7 @@ contract Pawnda is Ownable {
     function saveCollateral(
         uint256 pawnId,
         address collateralAddress,
-        address collateralId
+        uint256 collateralId
     ) external onlyOwner() {
         require(
             pawns[pawnId].isOpen == false,
@@ -285,10 +285,7 @@ contract Pawnda is Ownable {
 
         ERC721 collateral = ERC721(collateralAddress);
 
-        require(
-            collateral.transfer(owner(), collateralId),
-            "Collateral could not be transferred"
-        );
+        collateral.transferFrom(address(this), owner(), collateralId);
     }
 
     function getSigner(
