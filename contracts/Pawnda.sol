@@ -9,14 +9,14 @@ import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
 
 
 /**
- * @title A decentralized pawn shop
+ * @title A decentralized pawn shop (first implementation)
  * @dev This contract is the base of our project
  */
 contract Pawnda is Ownable {
     mapping (address => uint256) public nonces;
     mapping (bytes => bool) public canceledPawnRequests;
 
-    // Current fee charged by Pawnda (expresseed in per ten thousand)
+    // Current fee charged by Pawnda (expressed in per ten thousand!)
     uint16 public fee = 10;
 
     // Delay (in days) requested to save a collateral from being stuck in the contract
@@ -45,6 +45,21 @@ contract Pawnda is Ownable {
 
     Pawn[] public pawns;
 
+    /**
+     * @dev Pawns a new collateral
+     * @param customer The address of the customer
+     * @param customerNonce The nonce of the customer
+     * @param broker The address of the broker
+     * @param brokerNonce The nonce of the broker
+     * @param collateralAddress The address of the collateral
+     * @param collateralId The id of the collateral
+     * @param currencyAddress The address of the currency
+     * @param amount The amount requested by the customer
+     * @param rate The rate of the loan (expressed in per ten thousand!)
+     * @param loanDeadline The deadline of the loan
+     * @param customerSig The signature of the customer
+     * @param brokerSig The signature of the broker
+     */
     function pawnCollateral(
         address customer,
         uint256 customerNonce,
@@ -103,7 +118,7 @@ contract Pawnda is Ownable {
 
         require(
             collateral.getApproved(collateralId) == address(this),
-            "Contract is not allowed to manipulate broker funds"
+            "Contract is not allowed to manipulate customer collateral"
         );
 
         // Stores the collateral in the contract
@@ -146,6 +161,88 @@ contract Pawnda is Ownable {
         ) - 1;
 
         emit PawnCreated(pawnId, customer, broker);
+    }
+
+    /**
+     * @dev Pays back a loan
+     * @param pawnId The id of the pawn
+     * @param amount The amount to pay back
+     */
+    function payBackLoan(
+        uint256 pawnId,
+        uint256 amount
+    ) external {
+        require(
+            msg.sender == pawns[pawnId].customer,
+            "Only the customer can pay back a loan"
+        );
+
+        require(
+            pawns[pawnId].loanDeadline > now,
+            "Deadline has been reached"
+        );
+
+        require(
+            pawns[pawnId].isOpen,
+            "Pawn is already closed"
+        );
+
+        // Calculates the amount the customer must reimburse
+        uint256 expectedAmount = SafeMath.div(
+            SafeMath.mul(
+                pawns[pawnId].amount,
+                pawns[pawnId].rate
+            ),
+            10000
+        );
+
+        require(
+            SafeMath.add(pawns[pawnId].reimbursedAmount, amount) <= expectedAmount,
+            "Too much funds were sent"
+        );
+
+        ERC20 currency = ERC20(pawns[pawnId].currencyAddress);
+
+        require(
+            currency.allowance(pawns[pawnId].customer, address(this)) >= amount,
+            "Contract is not allowed to transfer customer funds"
+        );
+
+        require(
+            currency.transferFrom(pawns[pawnId].customer, pawns[pawnId].broker, amount),
+            "Funds could not be transferred"
+        );
+
+        pawns[pawnId].reimbursedAmount = SafeMath.add(pawns[pawnId].reimbursedAmount, amount);
+
+        if (pawns[pawnId].reimbursedAmount == expectedAmount) {
+            pawns[pawnId].isOpen = false;
+        }
+    }
+
+    /**
+     * @dev Gets a collateral back
+     * @param pawnId The id of a specific pawn
+     */
+    function getCollateralBack(
+        uint256 pawnId
+    ) external {
+        require(
+            pawns[pawnId].isOpen == false,
+            "Pawn is not closed"
+        );
+
+        ERC721 collateral = ERC721(pawns[pawnId].collateralAddress);
+
+        require(
+            collateral.ownerOf(pawns[pawnId].collateralId) == address(this),
+            "Collateral has already been transferred"
+        );
+
+        require(
+            collateral.transferFrom(address(this), customer, pawns[pawnId].collateralId),
+            "Collateral transfer failed"
+        );
     }
 
     /**
