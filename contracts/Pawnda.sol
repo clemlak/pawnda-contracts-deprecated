@@ -14,12 +14,16 @@ import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
  */
 contract Pawnda is Ownable {
     mapping (address => uint256) public nonces;
+
+    // TODO: Add cancelable pawn requests
     mapping (bytes => bool) public canceledPawnRequests;
 
     // Current fee charged by Pawnda (expressed in per ten thousand!)
+    // TODO: Add a function to update the fee
     uint16 public fee = 10;
 
     // Delay (in days) requested to save a collateral from being stuck in the contract
+    // Add a function to update the delay
     uint32 public saveCollateralDelay = 180;
 
     // Defines the structure of a pawn
@@ -47,31 +51,8 @@ contract Pawnda is Ownable {
 
     /**
      * @dev Pawns a new collateral
-     * param customer The address of the customer
-     * param customerNonce The nonce of the customer
-     * param broker The address of the broker
-     * param brokerNonce The nonce of the broker
-     * param collateralAddress The address of the collateral
-     * param collateralId The id of the collateral
-     * param currencyAddress The address of the currency
-     * param amount The amount requested by the customer
-     * param rate The rate of the loan (expressed in per ten thousand!)
-     * param loanDeadline The deadline of the loan
-     * param customerSig The signature of the customer
-     * param brokerSig The signature of the broker
-     */
-     /*
-     address customer,
-     address broker,
-     address collateralAddress,
-     address currencyAddress,
-
-     uint256 customerNonce,
-     uint256 brokerNonce,
-     uint256 collateralId,
-     uint256 amount,
-     uint16 rate,
-     uint32 loanDeadline,
+     * @param addresses An array containing the address of: customer, broker, collateralAddress, currencyAddress
+     * @param data An array containing: customerNonce, brokerNonce, collateralId, amount, rate, loanDeadline
      */
     function pawnCollateral(
         address[4] calldata addresses,
@@ -109,6 +90,19 @@ contract Pawnda is Ownable {
                 data[3],
                 uint16(data[4]),
                 uint32(data[5])
+            )
+            || msg.sender == getSigner(
+                brokerSig,
+                addresses[0],
+                data[0],
+                addresses[1],
+                data[1],
+                addresses[2],
+                data[2],
+                addresses[3],
+                data[3],
+                uint16(data[4]),
+                uint32(data[5])
             ),
             "Broker is not the signer"
         );
@@ -116,8 +110,26 @@ contract Pawnda is Ownable {
         ERC20 currency = ERC20(addresses[3]);
         ERC721 collateral = ERC721(addresses[2]);
 
+        address broker;
+
+        if (addresses[1] == address(0)) {
+            broker = msg.sender;
+        } else {
+            broker = addresses[1];
+        }
+
         require(
-            currency.allowance(addresses[1], address(this)) >= data[3],
+            data[0] == nonces[addresses[0]],
+            "Wrong customer nonce"
+        );
+
+        require(
+            data[1] == nonces[broker],
+            "Wrong broker nonce"
+        );
+
+        require(
+            currency.allowance(broker, address(this)) >= data[3],
             "Contract is not allowed to manipulate broker funds"
         );
 
@@ -139,19 +151,19 @@ contract Pawnda is Ownable {
         );
 
         require(
-            currency.transferFrom(addresses[1], addresses[0], SafeMath.sub(data[3], fees)),
+            currency.transferFrom(broker, addresses[0], SafeMath.sub(data[3], fees)),
             "Funds transfer to the customer failed"
         );
 
         require(
-            currency.transferFrom(addresses[1], address(this), fees),
+            currency.transferFrom(broker, address(this), fees),
             "Fees transfer failed"
         );
 
         uint256 pawnId = pawns.push(
             Pawn({
                 customer: addresses[0],
-                broker: addresses[1],
+                broker: broker,
                 collateralAddress: addresses[2],
                 collateralId: data[2],
                 currencyAddress: addresses[3],
@@ -163,7 +175,10 @@ contract Pawnda is Ownable {
             })
         ) - 1;
 
-        emit PawnCreated(pawnId, addresses[0], addresses[1]);
+        emit PawnCreated(pawnId, addresses[0], broker);
+
+        nonces[broker] = SafeMath.add(nonces[broker], 1);
+        nonces[addresses[0]] = SafeMath.add(nonces[addresses[0]], 1);
     }
 
     /**
