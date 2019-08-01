@@ -188,11 +188,6 @@ contract Pawnda is Ownable {
             "Deadline has been reached"
         );
 
-        require(
-            pawns[pawnId].isOpen,
-            "Pawn is already closed"
-        );
-
         // Calculates the amount the customer must reimburse
         uint256 expectedAmount = SafeMath.div(
             SafeMath.mul(
@@ -220,10 +215,6 @@ contract Pawnda is Ownable {
         );
 
         pawns[pawnId].reimbursedAmount = SafeMath.add(pawns[pawnId].reimbursedAmount, amount);
-
-        if (pawns[pawnId].reimbursedAmount == expectedAmount) {
-            pawns[pawnId].isOpen = false;
-        }
     }
 
     /**
@@ -234,8 +225,8 @@ contract Pawnda is Ownable {
         uint256 pawnId
     ) external {
         require(
-            pawns[pawnId].isOpen == false,
-            "Pawn is not closed"
+            pawns[pawnId].isOpen == true,
+            "Pawn is closed"
         );
 
         ERC721 collateral = ERC721(pawns[pawnId].collateralAddress);
@@ -244,6 +235,8 @@ contract Pawnda is Ownable {
             collateral.ownerOf(pawns[pawnId].collateralId) == address(this),
             "Collateral has already been transferred"
         );
+
+        pawns[pawnId].isOpen = true;
 
         collateral.transferFrom(address(this), pawns[pawnId].customer, pawns[pawnId].collateralId);
     }
@@ -294,29 +287,34 @@ contract Pawnda is Ownable {
     function getPawn(
         uint256 pawnId
     ) external view returns (
-        address,
-        address,
-        address,
-        uint256,
-        address,
-        uint256,
-        uint16,
-        uint32,
-        uint256,
-        bool
+        address[4] memory addresses,
+        uint256[5] memory data,
+        bool isOpen
     ) {
         return (
-            pawns[pawnId].customer,
-            pawns[pawnId].broker,
-            pawns[pawnId].collateralAddress,
-            pawns[pawnId].collateralId,
-            pawns[pawnId].currencyAddress,
-            pawns[pawnId].amount,
-            pawns[pawnId].rate,
-            pawns[pawnId].loanDeadline,
-            pawns[pawnId].reimbursedAmount,
+            [
+                pawns[pawnId].customer,
+                pawns[pawnId].broker,
+                pawns[pawnId].collateralAddress,
+                pawns[pawnId].currencyAddress
+            ],
+            [
+                pawns[pawnId].collateralId,
+                pawns[pawnId].amount,
+                uint256(pawns[pawnId].rate),
+                uint256(pawns[pawnId].loanDeadline),
+                pawns[pawnId].reimbursedAmount
+            ],
             pawns[pawnId].isOpen
         );
+    }
+
+    function getPawnStatus(
+        uint256 pawnId
+    ) external view returns (
+        bool isOpen
+    ) {
+        return pawns[pawnId].isOpen;
     }
 
     function getDueAmount(
