@@ -100,20 +100,20 @@ contract('Pawnda', (accounts) => {
     assert.equal(owner, accounts[0], 'Owner is wrong');
   });
 
-  it('Should claim test tokens', () => dummyToken.claimFreeTokens(web3.utils.toWei('1'), {
+  it('Should claim test tokens', () => dummyToken.claimFreeTokens(web3.utils.toWei('100'), {
     from: accounts[1],
   }));
 
   it('Should check the balance of user 1', async () => {
     const balance = await dummyToken.balanceOf(accounts[1]);
-    assert.equal(balance, web3.utils.toWei('1'), 'Account 1 balance is wrong');
+    assert.equal(balance, web3.utils.toWei('100'), 'Account 1 balance is wrong');
   });
 
   it('Should allow Pawnda to manipulate user 0 assets', () => dummyNifties.approve(pawnda.address, 0));
 
   it('Should allow Pawnda to manipulate user 1 funds', () => dummyToken.approve(
     pawnda.address,
-    web3.utils.toWei('1'), {
+    web3.utils.toWei('100'), {
       from: accounts[1],
     },
   ));
@@ -124,8 +124,8 @@ contract('Pawnda', (accounts) => {
       dummyNifties.address,
       0,
       dummyToken.address,
-      web3.utils.toWei('1'),
-      10000,
+      web3.utils.toWei('100'),
+      100,
     );
 
     const privateKeyBuffer = Buffer.from('af796b2f306df60860de622218536391987e4a78d24d7aaf2c1faf5706539ce6', 'hex');
@@ -144,8 +144,8 @@ contract('Pawnda', (accounts) => {
       dummyNifties.address,
       0,
       dummyToken.address,
-      web3.utils.toWei('1'),
-      10000,
+      web3.utils.toWei('100'),
+      100,
       loanDeadline,
     );
 
@@ -158,8 +158,8 @@ contract('Pawnda', (accounts) => {
       dummyNifties.address,
       0,
       dummyToken.address,
-      web3.utils.toWei('1'),
-      10000,
+      web3.utils.toWei('100'),
+      100,
     );
 
     const privateKeyBuffer = Buffer.from('fea9f43334b1bc9dd4181dfb017bc31c89a2c93432d5846195a396250266e082', 'hex');
@@ -178,8 +178,8 @@ contract('Pawnda', (accounts) => {
       dummyNifties.address,
       0,
       dummyToken.address,
-      web3.utils.toWei('1'),
-      10000,
+      web3.utils.toWei('100'),
+      100,
       loanDeadline,
     );
 
@@ -197,8 +197,8 @@ contract('Pawnda', (accounts) => {
       0,
       0,
       0,
-      web3.utils.toWei('1'),
-      10000,
+      web3.utils.toWei('100'),
+      100,
       loanDeadline,
     ],
     customerSig,
@@ -207,20 +207,33 @@ contract('Pawnda', (accounts) => {
     },
   ));
 
+  it('Should check asset 0 owner', async () => {
+    const owner = await dummyNifties.ownerOf(0);
+    assert.equal(owner, pawnda.address, 'Asset 0 owner is wrong');
+  });
+
+  it('Should check the balance of Pawnda', async () => {
+    const balance = await dummyToken.balanceOf(pawnda.address);
+    const feesWithFactor = web3.utils.toBN(web3.utils.toWei('100')).mul(web3.utils.toBN('10'));
+    const fees = feesWithFactor.div(web3.utils.toBN('10000'));
+
+    assert.equal(balance.toString(), fees.toString(), 'Balance is wrong');
+  });
+
   it('Should get the due amount for pawn 0', async () => {
     const res = await pawnda.getDueAmount(0);
-    const amount = web3.utils.toWei('1');
-    const dueAmountWithFactor = web3.utils.toBN(amount).mul(web3.utils.toBN('10000'));
+    const amount = web3.utils.toWei('100');
+    const dueAmountWithFactor = web3.utils.toBN(amount).mul(web3.utils.toBN('100'));
     const dueAmount = dueAmountWithFactor.div(web3.utils.toBN('10000'));
 
     assert.equal(res.toString(), dueAmount.toString(), 'Due amount is wrong');
 
-    await dummyToken.claimFreeTokens(web3.utils.toWei('1.1'));
+    await dummyToken.claimFreeTokens(web3.utils.toWei('101'));
   });
 
   it('Should allow Pawnda to manipulate user 0 funds', () => dummyToken.approve(
     pawnda.address,
-    web3.utils.toWei('1.1'),
+    web3.utils.toWei('101'),
   ));
 
   it('Should pay back pawn 0', async () => {
@@ -229,6 +242,7 @@ contract('Pawnda', (accounts) => {
   });
 
   it('Should get pawn 0', async () => {
+    const dueAmount = await pawnda.getDueAmount(0);
     const pawn = await pawnda.getPawn(0);
 
     assert.equal(pawn[0][0], accounts[0], 'Customer is wrong');
@@ -236,10 +250,24 @@ contract('Pawnda', (accounts) => {
     assert.equal(pawn[0][2], dummyNifties.address, 'Collateral address is wrong');
     assert.equal(pawn[0][3], dummyToken.address, 'Currency address is wrong');
     assert.equal(pawn[1][0], 0, 'Collateral id is wrong');
-    assert.equal(pawn[1][1].toString(), web3.utils.toWei('1'), 'Amount is wrong');
-    assert.equal(pawn[1][2].toString(), 10000, 'Rate is wrong');
+    assert.equal(pawn[1][1].toString(), web3.utils.toWei('100'), 'Amount is wrong');
+    assert.equal(pawn[1][2].toString(), 100, 'Rate is wrong');
     assert.equal(pawn[1][3].toString(), loanDeadline, 'Loan deadline is wrong');
-    // assert.equal(pawn[1][4].toString(), loanDeadline, 'Loan deadline is wrong');
+    assert.equal(pawn[1][4].toString(), dueAmount.toString(), 'Reimbursed amount is wrong');
     assert.equal(pawn.isOpen, true, 'isOpen is wrong');
+  });
+
+  it('Should get the collateral back', () => pawnda.getCollateralBack(0));
+
+  it('Should check asset 0 owner', async () => {
+    const owner = await dummyNifties.ownerOf(0);
+    assert.equal(owner, accounts[0], 'Asset 0 owner is wrong');
+  });
+
+  it('Should check the balance of user 1', async () => {
+    const balance = await dummyToken.balanceOf(accounts[1]);
+    const dueAmount = await pawnda.getDueAmount(0);
+
+    assert.equal(balance.toString(), dueAmount.toString(), 'User 1 balance is wrong');
   });
 });

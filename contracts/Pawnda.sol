@@ -77,34 +77,50 @@ contract Pawnda is Ownable {
             "Customer is not the signer"
         );
 
-        // FIXME: addresses[1] == getSigner should be fixed! This allows users using wrong signatures to pawn assets
-        require(
-            msg.sender == getSigner(
-                brokerSig,
-                addresses[0],
-                data[0],
-                addresses[1],
-                data[1],
-                addresses[2],
-                data[2],
-                addresses[3],
-                data[3],
-                uint16(data[4]),
-                uint32(data[5])
-            ),
-            "Broker is not the signer"
-        );
-
-        ERC20 currency = ERC20(addresses[3]);
-        ERC721 collateral = ERC721(addresses[2]);
-
         address broker;
 
         if (addresses[1] == address(0)) {
+            require(
+                msg.sender == getSigner(
+                    brokerSig,
+                    addresses[0],
+                    data[0],
+                    addresses[1],
+                    data[1],
+                    addresses[2],
+                    data[2],
+                    addresses[3],
+                    data[3],
+                    uint16(data[4]),
+                    uint32(data[5])
+                ),
+                "Broker is not the signer"
+            );
+
             broker = msg.sender;
         } else {
+            require(
+                addresses[1] == getSigner(
+                    brokerSig,
+                    addresses[0],
+                    data[0],
+                    addresses[1],
+                    data[1],
+                    addresses[2],
+                    data[2],
+                    addresses[3],
+                    data[3],
+                    uint16(data[4]),
+                    uint32(data[5])
+                ),
+                "Broker is not the signer"
+            );
+
             broker = addresses[1];
         }
+
+        ERC20 currency = ERC20(addresses[3]);
+        ERC721 collateral = ERC721(addresses[2]);
 
         require(
             data[0] == nonces[addresses[0]],
