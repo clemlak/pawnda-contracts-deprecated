@@ -77,8 +77,6 @@ contract Pawnda is Ownable {
             "Customer is not the signer"
         );
 
-        address broker;
-
         if (addresses[1] == address(0)) {
             require(
                 msg.sender == getSigner(
@@ -96,8 +94,6 @@ contract Pawnda is Ownable {
                 ),
                 "Broker is not the signer"
             );
-
-            broker = msg.sender;
         } else {
             require(
                 addresses[1] == getSigner(
@@ -115,7 +111,13 @@ contract Pawnda is Ownable {
                 ),
                 "Broker is not the signer"
             );
+        }
 
+        address broker;
+
+        if (addresses[1] == address(0)) {
+            broker = msg.sender;
+        } else {
             broker = addresses[1];
         }
 

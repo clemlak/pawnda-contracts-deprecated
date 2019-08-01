@@ -270,4 +270,12 @@ contract('Pawnda', (accounts) => {
 
     assert.equal(balance.toString(), dueAmount.toString(), 'User 1 balance is wrong');
   });
+
+  it('Should check the nonces', async () => {
+    const user0Nonce = await pawnda.nonces(accounts[0]);
+    const user1Nonce = await pawnda.nonces(accounts[1]);
+
+    assert.equal(user0Nonce.toString(), 1, 'User 0 nonce is wrong');
+    assert.equal(user1Nonce.toString(), 1, 'User 1 nonce is wrong');
+  });
 });
