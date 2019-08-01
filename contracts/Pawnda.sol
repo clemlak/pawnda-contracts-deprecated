@@ -77,21 +77,9 @@ contract Pawnda is Ownable {
             "Customer is not the signer"
         );
 
+        // FIXME: addresses[1] == getSigner should be fixed! This allows users using wrong signatures to pawn assets
         require(
-            addresses[1] == getSigner(
-                brokerSig,
-                addresses[0],
-                data[0],
-                addresses[1],
-                data[1],
-                addresses[2],
-                data[2],
-                addresses[3],
-                data[3],
-                uint16(data[4]),
-                uint32(data[5])
-            )
-            || msg.sender == getSigner(
+            msg.sender == getSigner(
                 brokerSig,
                 addresses[0],
                 data[0],
@@ -301,6 +289,48 @@ contract Pawnda is Ownable {
         ERC721 collateral = ERC721(collateralAddress);
 
         collateral.transferFrom(address(this), owner(), collateralId);
+    }
+
+    function getPawn(
+        uint256 pawnId
+    ) external view returns (
+        address,
+        address,
+        address,
+        uint256,
+        address,
+        uint256,
+        uint16,
+        uint32,
+        uint256,
+        bool
+    ) {
+        return (
+            pawns[pawnId].customer,
+            pawns[pawnId].broker,
+            pawns[pawnId].collateralAddress,
+            pawns[pawnId].collateralId,
+            pawns[pawnId].currencyAddress,
+            pawns[pawnId].amount,
+            pawns[pawnId].rate,
+            pawns[pawnId].loanDeadline,
+            pawns[pawnId].reimbursedAmount,
+            pawns[pawnId].isOpen
+        );
+    }
+
+    function getDueAmount(
+        uint256 pawnId
+    ) external view returns (uint256) {
+        uint256 expectedAmount = SafeMath.div(
+            SafeMath.mul(
+                pawns[pawnId].amount,
+                pawns[pawnId].rate
+            ),
+            10000
+        );
+
+        return expectedAmount;
     }
 
     function getSigner(
