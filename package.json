@@ -19,6 +19,6 @@
   },
   "scripts": {
     "test": "truffle test",
-    "ganache": "ganache-cli -m \"space hamster hidden cryst elevator fiscal silent virus milk pulp elder fault\""
+    "run-ganache": "ganache-cli -m \"space hamster hidden cryst elevator fiscal silent virus milk pulp elder fault\""
   }
 }
