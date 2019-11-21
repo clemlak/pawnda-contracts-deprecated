@@ -1,5 +1,5 @@
 require('dotenv').config();
-const HDWalletProvider = require('truffle-hdwallet-provider');
+const HDWalletProvider = require('@truffle/hdwallet-provider');
 const PrivateKeyProvider = require('truffle-privatekey-provider');
 const Utils = require('web3-utils');
 
@@ -12,8 +12,6 @@ module.exports = {
       host: '127.0.0.1',
       port: 8545,
       network_id: '*',
-      gas: 4000000,
-      gasPrice: Utils.toWei('2', 'gwei'),
     },
     ropsten: {
       provider() {
@@ -38,7 +36,7 @@ module.exports = {
   },
   compilers: {
     solc: {
-      version: '0.5.10',
+      version: '0.5.13',
       settings: {
         optimizer: {
           enabled: true,
