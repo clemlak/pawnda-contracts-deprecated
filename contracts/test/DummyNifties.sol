@@ -1,6 +1,6 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.13;
 
-import "openzeppelin-solidity/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 
 contract DummyNifties is ERC721 {
