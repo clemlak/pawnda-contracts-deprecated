@@ -15,10 +15,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 contract Pawnda is Ownable {
     mapping (address => uint256) public nonces;
 
-    // TODO: Add cancelable pawn requests
-    mapping (bytes => bool) public canceledPawnRequests;
-
-    // Current fee charged by Pawnda (expressed in per ten thousand!)
+    // Current fee charged by Pawnda expressed in (per ten thousand)
     // TODO: Add a function to update the fee
     uint16 public fee = 10;
 
