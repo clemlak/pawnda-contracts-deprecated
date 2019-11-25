@@ -10,6 +10,9 @@
     "eth-sig-util": "^2.5.0",
     "truffle-privatekey-provider": "^1.3.0",
     "web3": "^1.2.4",
+    "web3-eth-abi": "^1.2.4",
+    "web3-eth-accounts": "^1.2.4",
+    "web3-eth-personal": "^1.2.4",
     "web3-utils": "^1.2.4"
   },
   "devDependencies": {
@@ -19,6 +22,6 @@
   },
   "scripts": {
     "test": "truffle test",
-    "run-ganache": "ganache-cli -m \"space hamster hidden cryst elevator fiscal silent virus milk pulp elder fault\""
+    "run-ganache": "ganache-cli -m \"nuclear inform frame attract dish once runway citizen album warfare tunnel spoil\""
   }
 }
