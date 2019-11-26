@@ -7,47 +7,23 @@ const DummyNifties = artifacts.require('DummyNifties');
 
 const {
   toWei,
+  fromWei,
+  soliditySha3,
+  BN,
 } = require('web3-utils');
+
+const Accounts = require('web3-eth-accounts');
+
+const acc = new Accounts('http://1270.0.0.1:8545');
 
 const {
   constants,
+  expectEvent,
 } = require('@openzeppelin/test-helpers');
 
 const {
   ZERO_ADDRESS,
 } = constants;
-
-const ethSigUtil = require('eth-sig-util');
-
-function returnData(
-  parties,
-  collateralsContracts,
-  collateralsValues,
-  data,
-) {
-  return [
-    {
-      type: 'address[]',
-      name: 'parties',
-      value: parties,
-    },
-    {
-      type: 'address[]',
-      name: 'collateralsContracts',
-      value: collateralsContracts,
-    },
-    {
-      type: 'uint256[]',
-      name: 'collateralsValues',
-      value: collateralsValues,
-    },
-    {
-      type: 'uint256[]',
-      name: 'data',
-      value: data,
-    },
-  ];
-}
 
 async function setupContext(
   pawnda,
@@ -81,20 +57,20 @@ contract('Pawnda', (accounts) => {
   const lender = accounts[2];
   const randomUser = accounts[3];
 
-  beforeEach(async () => {
-    dummyToken = await DummyToken.deployed();
-    dummyNifties = await DummyNifties.deployed();
-    pawnda = await Pawnda.deployed();
-  });
-
   describe('-> Good behaviors', async () => {
-    it('Should sign data as a borrower', async () => {
+    beforeEach(async () => {
+      dummyToken = await DummyToken.new();
+      dummyNifties = await DummyNifties.new();
+      pawnda = await Pawnda.new();
+    });
+
+    it('Should verify the signer', async () => {
       await setupContext(pawnda, dummyToken, dummyNifties, borrower, lender);
 
       const timeframe = 60 * 60 * 24 * 7;
       const deadline = Math.floor(Date.now() / 1000) + timeframe;
 
-      const data = returnData(
+      const hashedData = await pawnda.getHashedData(
         [
           borrower,
           ZERO_ADDRESS,
@@ -109,22 +85,19 @@ contract('Pawnda', (accounts) => {
         [
           '0',
           '0',
-          '100',
+          toWei('100'),
           '10000',
           deadline,
         ],
       );
 
-      const privateKeyBuffer = Buffer.from('fea9f43334b1bc9dd4181dfb017bc31c89a2c93432d5846195a396250266e082', 'hex');
-
-      const borrowerSig = ethSigUtil.signTypedDataLegacy(privateKeyBuffer, {
-        data,
-      });
-
-      console.log(borrowerSig);
+      const signedData = acc.sign(
+        hashedData,
+        '0xb8590d1d80f33d27ad26331a6126987d728897a0f92581c280236ffae1568c0e',
+      );
 
       const signer = await pawnda.getSigner(
-        borrowerSig,
+        signedData.signature,
         [
           borrower,
           ZERO_ADDRESS,
@@ -139,15 +112,176 @@ contract('Pawnda', (accounts) => {
         [
           '0',
           '0',
-          '100',
+          toWei('100'),
           '10000',
           deadline,
         ],
       );
 
-      console.log(signer);
+      assert.equal(signer, borrower, 'Signer is not the borrower');
+    });
 
-      assert.equal(signer, borrowerSig, 'Signer is not the borrower');
+    it('Should create a loan', async () => {
+      await setupContext(pawnda, dummyToken, dummyNifties, borrower, lender);
+
+      const timeframe = 60 * 60 * 24 * 7;
+      const deadline = Math.floor(Date.now() / 1000) + timeframe;
+
+      const loanAmount = toWei('100');
+      const rate = '100';
+
+      const hashedData = await pawnda.getHashedData(
+        [
+          borrower,
+          ZERO_ADDRESS,
+          dummyToken.address,
+        ],
+        [
+          dummyNifties.address,
+        ],
+        [
+          '0',
+        ],
+        [
+          '0',
+          '0',
+          loanAmount,
+          rate,
+          deadline,
+        ],
+      );
+
+      const signedData = acc.sign(
+        hashedData,
+        '0xb8590d1d80f33d27ad26331a6126987d728897a0f92581c280236ffae1568c0e',
+      );
+
+      const receipt = await pawnda.createLoan(
+        [
+          borrower,
+          ZERO_ADDRESS,
+          dummyToken.address,
+        ],
+        [
+          dummyNifties.address,
+        ],
+        [
+          '0',
+        ],
+        [
+          '0',
+          '0',
+          loanAmount,
+          rate,
+          deadline,
+        ],
+        signedData.signature,
+        '0x0000000000000000000000000000000000000000', {
+          from: lender,
+        },
+      );
+
+      expectEvent(receipt, 'LoanCreated', {
+        loanId: '0',
+        borrower,
+        lender,
+      });
+
+      const loan = await pawnda.loans(0);
+      const expectedDebt = new BN(loanAmount).mul(new BN(rate)).div(new BN('10000'));
+
+      assert.equal(loan.borrower, borrower, 'Borrower is wrong');
+      assert.equal(loan.lender, lender, 'Lender is wrong');
+      assert.equal(loan.currency, dummyToken.address, 'Currency is wrong');
+      assert.equal(loan.amount, toWei('100'), 'Amount is wrong');
+      assert.isOk(loan.rate.eq(new BN(rate)), 'Rate is wrong');
+      assert.isOk(loan.deadline.eq(new BN(deadline)), 'Deadline is wrong');
+      assert.isOk(loan.debt.eq(expectedDebt), 'Debt is wrong');
+      assert.isOk(loan.isOpen, 'Loan status is wrong');
+    });
+
+    it('Should create a loan and pay back a part of the debt', async () => {
+      await setupContext(pawnda, dummyToken, dummyNifties, borrower, lender);
+
+      const timeframe = 60 * 60 * 24 * 7;
+      const deadline = Math.floor(Date.now() / 1000) + timeframe;
+
+      const loanAmount = toWei('100');
+      const rate = '100';
+
+      const hashedData = await pawnda.getHashedData(
+        [
+          borrower,
+          ZERO_ADDRESS,
+          dummyToken.address,
+        ],
+        [
+          dummyNifties.address,
+        ],
+        [
+          '0',
+        ],
+        [
+          '0',
+          '0',
+          loanAmount,
+          rate,
+          deadline,
+        ],
+      );
+
+      const signedData = acc.sign(
+        hashedData,
+        '0xb8590d1d80f33d27ad26331a6126987d728897a0f92581c280236ffae1568c0e',
+      );
+
+      await pawnda.createLoan(
+        [
+          borrower,
+          ZERO_ADDRESS,
+          dummyToken.address,
+        ],
+        [
+          dummyNifties.address,
+        ],
+        [
+          '0',
+        ],
+        [
+          '0',
+          '0',
+          loanAmount,
+          rate,
+          deadline,
+        ],
+        signedData.signature,
+        '0x0000000000000000000000000000000000000000', {
+          from: lender,
+        },
+      );
+
+      const loan = await pawnda.loans(0);
+
+      await dummyToken.claimFreeTokens(toWei('200'), {
+        from: borrower,
+      });
+
+      await dummyToken.approve(pawnda.address, toWei('200'), {
+        from: borrower,
+      });
+
+      await pawnda.payBackLoan(
+        0,
+        loan.debt.div(new BN(2)), {
+          from: borrower,
+        },
+      );
+
+      const updatedLoan = await pawnda.loans(0);
+
+      const expectedDebt = loan.debt.div(new BN(2));
+
+      assert.isOk(updatedLoan.debt.eq(expectedDebt), 'Debt is wrong');
     });
   });
 });

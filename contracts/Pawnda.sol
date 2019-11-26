@@ -7,10 +7,11 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/ownership/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/cryptography/ECDSA.sol";
 
 
 contract ERC20OrERC721Token {
-    function transferFrom(address sender, address recipient, uint256 amount) public returns (bool);
+    function transferFrom(address sender, address recipient, uint256 amount) public;
 }
 
 
@@ -39,7 +40,7 @@ contract Pawnda is Ownable {
         uint256 amount;
         uint256 rate;
         uint256 deadline;
-        uint256 reimbursed;
+        uint256 debt;
         bool isOpen;
     }
 
@@ -76,33 +77,42 @@ contract Pawnda is Ownable {
                 collateralsValues,
                 data
             ),
-            "0"
+            "Borrower is not the signer"
         );
 
-        require(
-            parties[1] == getSigner(
-                lenderSig,
-                parties,
-                collateralsContracts,
-                collateralsValues,
-                data
-            ),
-            "1"
-        );
+        if (parties[1] != address(0)) {
+            require(
+                parties[1] == getSigner(
+                    lenderSig,
+                    parties,
+                    collateralsContracts,
+                    collateralsValues,
+                    data
+                ),
+                "Lender is not the signer"
+            );
+        }
 
-        require(
-            data[0] == nonces[parties[0]], "2");
+        address lender;
 
-        require(data[1] == nonces[parties[1]], "3");
+        if (parties[1] == address(0)) {
+            lender = msg.sender;
+        } else {
+            lender = parties[1];
+        }
 
-        require(data[4] > now, "4");
+        require(data[0] == nonces[parties[0]], "Wrong borrower nonce");
 
-        require(collateralsContracts.length == collateralsValues.length, "5");
+        require(data[1] == nonces[lender], "Wrong lender nonce");
+
+        require(data[4] > now, "Loan deadline already reached");
+
+        require(collateralsContracts.length == collateralsValues.length, "Collaterals do not match");
 
         for (uint256 i = 0; i < collateralsContracts.length; i += 1) {
             ERC20OrERC721Token token = ERC20OrERC721Token(collateralsContracts[i]);
 
-            require(token.transferFrom(parties[0], address(this), collateralsValues[i]), "6");
+            token.transferFrom(parties[0], address(this), collateralsValues[i]);
         }
 
         uint256 fees = SafeMath.div(
@@ -115,19 +125,23 @@ contract Pawnda is Ownable {
 
         ERC20 currency = ERC20(parties[2]);
 
-        require(currency.transferFrom(parties[1], parties[0], SafeMath.sub(data[2], fees)), "7");
+        require(currency.transferFrom(lender, parties[0], SafeMath.sub(data[2], fees)), "7");
 
-        require(currency.transferFrom(parties[1], address(this), fees), "8");
+        require(currency.transferFrom(lender, address(this), fees), "8");
 
         pushLoan(
-            parties,
+            [
+                parties[0],
+                lender,
+                parties[2]
+            ],
             collateralsContracts,
             collateralsValues,
             data
         );
 
         nonces[parties[0]] = SafeMath.add(nonces[parties[0]], 1);
-        nonces[parties[1]] = SafeMath.add(nonces[parties[1]], 1);
+        nonces[lender] = SafeMath.add(nonces[lender], 1);
     }
 
     /**
@@ -141,7 +155,7 @@ contract Pawnda is Ownable {
     ) external {
         require(
             msg.sender == loans[loanId].borrower,
-            "9"
+            "Sender is not the borrower"
         );
 
         require(
@@ -149,17 +163,8 @@ contract Pawnda is Ownable {
             "10"
         );
 
-        // Calculates the amount the borrower must reimburse
-        uint256 expectedAmount = SafeMath.div(
-            SafeMath.mul(
-                loans[loanId].amount,
-                loans[loanId].rate
-            ),
-            10000
-        );
-
         require(
-            SafeMath.add(loans[loanId].reimbursed, amount) <= expectedAmount,
+            amount <= loans[loanId].debt,
             "11"
         );
 
@@ -170,7 +175,7 @@ contract Pawnda is Ownable {
             "12"
         );
 
-        loans[loanId].reimbursed = SafeMath.add(loans[loanId].reimbursed, amount);
+        loans[loanId].debt = SafeMath.sub(loans[loanId].debt, amount);
     }
 
     /**
@@ -185,26 +190,16 @@ contract Pawnda is Ownable {
             "13"
         );
 
-        uint256 expectedAmount = SafeMath.div(
-            SafeMath.mul(
-                loans[loanId].amount,
-                loans[loanId].rate
-            ),
-            10000
-        );
-
         require(
-            loans[loanId].reimbursed == expectedAmount,
+            loans[loanId].debt == 0,
             "14"
         );
 
         for (uint256 i = 0; i < loans[loanId].collateralsContracts.length; i += 1) {
             ERC20OrERC721Token token = ERC20OrERC721Token(loans[loanId].collateralsContracts[i]);
 
-            require(
-                token.transferFrom(address(this), loans[loanId].borrower, loans[loanId].collateralsValues[i]),
-                "15"
-            );
+            token.transferFrom(address(this), loans[loanId].borrower, loans[loanId].collateralsValues[i]);
+
         }
 
         loans[loanId].isOpen = false;
@@ -236,14 +231,14 @@ contract Pawnda is Ownable {
         uint256 loanId = loans.push(
             Loan({
                 borrower: parties[0],
-                lender: parties[0],
+                lender: parties[1],
                 collateralsContracts: collateralsContracts,
                 collateralsValues: collateralsValues,
                 currency: parties[2],
                 amount: data[2],
                 rate: data[3],
                 deadline: data[4],
-                reimbursed: 0,
+                debt: SafeMath.mul(data[2], data[3]) / 10000,
                 isOpen: true
             })
         ) - 1;
@@ -257,71 +252,58 @@ contract Pawnda is Ownable {
         address[] memory collateralsContracts,
         uint256[] memory collateralsValues,
         uint256[5] memory data
-    ) public pure returns (
-        address signer
+    ) public view returns (
+        address
     ) {
-        bytes32 typeHash = keccak256(abi.encodePacked(
+        bytes32 hashedData = getHashedData(
+            parties,
+            collateralsContracts,
+            collateralsValues,
+            data
+        );
+
+        return recover(
+            hashedData,
+            signature
+        );
+    }
+
+    function getHashedData(
+        address[3] memory parties,
+        address[] memory collateralsContracts,
+        uint256[] memory collateralsValues,
+        uint256[5] memory data
+    ) public pure returns (
+        bytes32
+    ) {
+        bytes32 typesHash = keccak256(abi.encodePacked(
             "address[] parties",
             "address[] collateralsContracts",
             "uint256[] collateralsValues",
             "uint256[] data"
         ));
 
-        bytes32 valueHash = keccak256(abi.encodePacked(
+        bytes32 valuesHash = keccak256(abi.encodePacked(
             parties,
             collateralsContracts,
             collateralsValues,
             data
         ));
 
-        return recoverSigner(
-            keccak256(abi.encodePacked(typeHash, valueHash)),
+        return keccak256(abi.encodePacked(typesHash, valuesHash));
+    }
+
+    function recover(
+        bytes32 hashedData,
+        bytes memory signature
+    ) public pure returns (
+        address
+    ) {
+        return ECDSA.recover(
+            keccak256(
+                abi.encodePacked("\x19Ethereum Signed Message:\n32", hashedData)
+            ),
             signature
         );
-    }
-
-    function splitSignature(
-        bytes memory signature
-    ) private pure returns (
-        uint8,
-        bytes32,
-        bytes32
-    ) {
-        require(signature.length == 65, "Wrong sig length");
-
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-
-        assembly {
-            r := mload(add(signature, 32))
-            s := mload(add(signature, 64))
-            v := byte(0, mload(add(signature, 96)))
-        }
-
-        return (v, r, s);
-    }
-
-    function recoverSigner(
-        bytes32 hash,
-        bytes memory signature
-    ) private pure returns (
-        address signer
-    ) {
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-
-        (v, r, s) = splitSignature(signature);
-
-        if (v < 27) {
-            v += 27;
-        }
-
-        if (v != 27 && v != 28) {
-            return address(0);
-        } else {
-            return ecrecover(hash, v, r, s);
-        }
     }
 }
